@@ -1,306 +1,420 @@
-const siyuan = require("siyuan");
-
-const panelHTML = `
-<div class="fn__flex fn__flex-1 fn__flex-column">
-    <div class="fn__flex" style="padding: 4px 8px;position: relative">
-        <span
-            class="toolbar__item fn__flex-center b3-tooltips b3-tooltips__se btnBack"
-            aria-label="转到上一页"
-        >
-            <svg><use xlink:href="#iconLeft"></use></svg>
-        </span>
-        <span
-            class="toolbar__item fn__flex-center b3-tooltips b3-tooltips__se btnForward"
-            aria-label="转到下一页"
-        >
+const { Plugin } = require("siyuan");
+const clientApi = require("siyuan");
+let 全局浏览记录 = [];
+let kernelApi;
+let siyuanMenu;
+let panelHTML = `
+    <div class="fn__flex fn__flex-1  fn__flex-column">    
+        <div class="fn__flex" style="padding: 4px 8px;position: relative">
+            <span style="opacity: 1" class="block__icon fn__flex-center btnBack" data-menu="true">
+                <svg><use xlink:href="#iconLeft"></use></svg>
+            </span>
+            <span style="opacity: 1" class="block__icon fn__flex-center btnForward" data-menu="true">                 
             <svg ><use xlink:href="#iconRight"></use></svg>
-        </span>
-        <span
-            class="toolbar__item fn__flex-center b3-tooltips b3-tooltips__se btnRefresh"
-            aria-label="刷新"
-        >
-            <svg><use xlink:href="#iconRefresh"></use></svg>
-        </span>
-        <div class="fn__space"></div>
-        <input class="b3-text-field fn__flex-1">
-        <span class="fn__space"></span>
-        <span
-            style="opacity: 1"
-            class="fn__flex-center b3-tooltips b3-tooltips__w debug fn__none"
-            aria-label="反向链接"
-        >
-            <svg><use xlink:href="#iconLink"></use></svg>
-        </span>
-        <div id="searchHistoryList" data-close="false" class="fn__none b3-menu b3-list b3-list--background" style="position: absolute;top: 30px;max-height: 50vh;overflow: auto"></div>
-    </div>
-
-    <div class="fn__flex fn__flex-1 naive_ifrmeContainer" style="max-height:100%" >
-        <webview
-            class="fn__flex-1"
-            style=" max-height:calc(100% - 200px)"
-            src="" data-src="" border="0"
-            frameborder="no"
-            framespacing="0"
+            </span>
+            <div class="fn__space"></div>
+            <input class="b3-text-field fn__flex-1">
+            <span class="fn__space"></span>
+            <span 
+            style="opacity: 1" 
+            class="block__icon fn__flex-center b3-tooltips b3-tooltips__w btnRefresh" 
+            aria-label="刷新">
+                <svg><use xlink:href="#iconRefresh"></use></svg>
+            </span>
+            <span 
+            style="opacity: 1" 
+            class="block__icon fn__flex-center b3-tooltips b3-tooltips__w debug fn__none" 
+            aria-label="反向链接">
+                <svg><use xlink:href="#iconLink"></use></svg>
+            </span>
+            <div id="searchHistoryList" data-close="false" class="fn__none b3-menu b3-list b3-list--background" style="position: absolute;top: 30px;max-height: 50vh;overflow: auto"></div>
+        </div>   
+  
+        <div class="fn__flex fn__flex-1  naive_ifrmeContainer" style="max-height:100%" >
+            <webview   
+            class="fn__flex-1" 
+            style=" max-height:calc(100% - 200px)" 
+            src="" data-src="" border="0" 
+            frameborder="no" 
+            framespacing="0" 
             allowfullscreen="true"
             allowpopups="true"
-        ></webview>
+            ></webview  >   
+           
     </div>
-</div>
-`
+  </div>
+  `;
+let BrowserTabContainer = {
+  type: "common",
+  init() {
+    this.element.innerHTML = panelHTML;
+    this.urlInputter = this.element.querySelector("input");
+    this.urlInputter.value = this.data.url;
+    this.frame = this.element.querySelector("webview");
+    if (!window.require) {
+      this.frame.outerHTML = `
+            <iframe   
+            class="fn__flex-1" 
+            style=" max-height:calc(100% - 200px)" 
+            src="" data-src="" border="0" 
+            frameborder="no" 
+            framespacing="0" 
+            allowfullscreen="true"
+            allowpopups="true"
+            ></iframe  >   
 
-const iframeHTML = `
-<iframe
-    class="fn__flex-1"
-    style=" max-height:calc(100% - 200px)"
-    src=""
-    data-src=""
-    border="0"
-    frameborder="no"
-    framespacing="0"
-    allowfullscreen="true"
-    allowpopups="true"
-></iframe  >
-`
-
-function BrowserTabContainerFactory(pluginContext) {
-    return {
-        type: "common",
-        init() {
-            // console.debug(this)
-            this.element.innerHTML = panelHTML;
-            this.urlInputter = this.element.querySelector("input")
-            this.urlInputter.value = this.data.url
-            this.webview = this.element.querySelector("webview")
-
-            /* 非 Electron 环境回退到 iframe */
-            if (!globalThis.require) {
-                this.webview.outerHTML = iframeHTML
-                this.webview = this.element.querySelector('iframe')
-                this.webview.reload = () => { this.webview.src = this.webview.src }
-            }
-
-            // console.debug(this)
-            this.browser_tab_manager = new BrowserTabManager(
-                this.webview,
-                this.element.querySelector('.btnBack'),
-                this.element.querySelector('.btnForward'),
-                this.element.querySelector('.btnRefresh'),
-                this.urlInputter,
-                this.element,
-                this,
-                pluginContext,
-            )
-            this.browser_tab_manager.loadURL(this.data.url)
-        }
+            `;
+      this.frame = this.element.querySelector("iframe");
+      this.frame.reload = () => {
+        this.frame.setAttribute("src", this.frame.getAttribute("src"));
+      };
     }
-}
-
-/**
- * 页签管理器
- * @params {HTMLElement} webview: webview/iframe HTML 元素
- * @params {HTMLElement} btnBack: 返回按钮 HTML 元素
- * @params {HTMLElement} btnForward: 前进按钮 HTML 元素
- * @params {HTMLElement} btnRefresh: 刷新按钮 HTML 元素
- * @params {HTMLElement} addressInputBox: 地址输入框 HTML 元素
- * @params {HTMLElement} tabContent: 页签主体 HTML 元素
- * @params {Custom} tabContext: 思源自定义页签上下文
- * @params {BrowserTabPlugin} pluginContext: 插件上下文
- */
-class BrowserTabManager {
-    constructor(
-        webview,
-        btnBack,
-        btnForward,
-        btnRefresh,
-        addressInputBox,
-        tabContent,
-        tabContext,
-        pluginContext,
-    ) {
-        this.webview = webview
-        this.button_back = btnBack
-        this.buttom_forward = btnForward
-        this.button_refrash = btnRefresh
-        this.input_address = addressInputBox
-        this.tab = tabContent
-
-        this.context_tab = tabContext
-        this.context_plugin = pluginContext
-
-        this.isWebview = this.webview.localName === "webview"
-
-        this.init()
+    let 标题容器 = ()=>{return this.parent.headElement||null}
+    console.log(this);
+    this.页面控制器 = new 页面控制器(
+      this.frame,
+      this.urlInputter,
+      标题容器,
+      this.element.querySelector(".btnForward"),
+      this.element.querySelector(".btnBack"),
+      this.element.querySelector(".btnRefresh"),
+      this.element
+    );
+    this.页面控制器.加载URL(this.data.url);
+  },
+};
+const getIconByType = (type, sub) => {
+  let iconName = "";
+  switch (type) {
+    case "NodeDocument":
+      iconName = "iconFile";
+      break;
+    case "NodeThematicBreak":
+      iconName = "iconLine";
+      break;
+    case "NodeParagraph":
+      iconName = "iconParagraph";
+      break;
+    case "NodeHeading":
+      if (sub) {
+        iconName = "icon" + sub.toUpperCase();
+      } else {
+        iconName = "iconHeadings";
+      }
+      break;
+    case "NodeBlockquote":
+      iconName = "iconQuote";
+      break;
+    case "NodeList":
+      if (sub === "t") {
+        iconName = "iconCheck";
+      } else if (sub === "o") {
+        iconName = "iconOrderedList";
+      } else {
+        iconName = "iconList";
+      }
+      break;
+    case "NodeListItem":
+      iconName = "iconListItem";
+      break;
+    case "NodeCodeBlock":
+    case "NodeYamlFrontMatter":
+      iconName = "iconCode";
+      break;
+    case "NodeTable":
+      iconName = "iconTable";
+      break;
+    case "NodeBlockQueryEmbed":
+      iconName = "iconSQL";
+      break;
+    case "NodeSuperBlock":
+      iconName = "iconSuper";
+      break;
+    case "NodeMathBlock":
+      iconName = "iconMath";
+      break;
+    case "NodeHTMLBlock":
+      iconName = "iconHTML5";
+      break;
+    case "NodeWidget":
+      iconName = "iconBoth";
+      break;
+    case "NodeIFrame":
+      iconName = "iconLanguage";
+      break;
+    case "NodeVideo":
+      iconName = "iconVideo";
+      break;
+    case "NodeAudio":
+      iconName = "iconRecord";
+      break;
+    case "NodeAttributeView":
+      iconName = "iconDatabase";
+      break;
+  }
+  return iconName;
+};
+class 页面控制器 {
+  constructor(
+    页面容器,
+    地址栏容器,
+    标题容器,
+    前进按钮,
+    后退按钮,
+    重载按钮,
+    面板容器
+  ) {
+    this.页面容器 = 页面容器;
+    this.地址栏容器 = 地址栏容器;
+    this.前进按钮 = 前进按钮;
+    this.后退按钮 = 后退按钮;
+    this.标题容器 = 标题容器;
+    this.重载按钮 = 重载按钮;
+    this.页面状态 = {
+      历史记录数组: [],
+      当前历史序号: 0,
+    };
+    this.面板容器 = 面板容器;
+    this.绑定事件();
+    if (window.require) {
+      this.创建浏览器菜单();
     }
-    initAriaLabel() {
-        this.buttom_forward.ariaLabel = this.context_plugin.i18n.goForwardOnePage
-        this.button_back.ariaLabel = this.context_plugin.i18n.goBackOnePage
-        this.button_refrash.ariaLabel = this.context_plugin.i18n.reloadCurrentPage
-    }
-    init() {
-        this.initAriaLabel()
-        this.input_address.addEventListener('change', () => {
-            this.loadURL(encodeURI(this.input_address.value))
+  }
+  创建浏览器菜单() {
+    const remote = window.require("@electron/remote");
+    this.页面容器.addEventListener("did-navigate-in-page", (res) => {
+      this.页面容器.src !== res.url ? (this.页面容器.src = res.url) : null;
+    });
+    this.页面容器.addEventListener("context-menu", (event) => {
+      console.log(event, remote);
+      const menu = new remote.Menu();
+      menu.append(
+        new remote.MenuItem({
+          label: "刷新",
+          click: () => {
+            this.页面容器.reload();
+          },
+          enabaled: event.params.canSelectAll,
+          visiable: event.params.isEditable,
         })
-        // this.前进按钮.addEventListener('click', this.前进按钮点击事件监听器)
-        // this.后退按钮.addEventListener('click', this.后退按钮点击事件监听器)
-        this.updateForwardButtonStatus(false)
-        this.updateBackButtonStatus(false)
-        this.updateRefreshButtonStatus(false)
-        if (this.isWebview) { // Election 环境
-            /**
-             * 监听页面变化
-             * REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#event-load-commit
-             * REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#event-will-navigate
-             * REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#event-did-start-navigation
-             */
-            // this.view.addEventListener('will-navigate', e => {
-            // this.view.addEventListener('did-start-navigation', e => {
-            this.webview.addEventListener('load-commit', e => {
-                // console.debug(e)
-                if (e.isMainFrame) {
-                    this.input_address.value = decodeURI(e.url)
+      );
+      menu.append(
+        new remote.MenuItem({
+          role: "selectAll",
+          label: "全选",
+          enabaled: event.params.canSelectAll,
+          visiable: event.params.isEditable,
+        })
+      );
+      menu.append(
+        new remote.MenuItem({
+          role: "copy",
+          label: "复制",
+          enabaled: event.params.selectionText,
+          visiable: event.params.selectionText,
+        })
+      );
+      menu.append(
+        new remote.MenuItem({
+          label: "搜索思源",
+          click: async () => {
+            siyuanMenu.close();
+            let params = {
+              query: event.params.selectionText,
+              method: 0,
+              types: {
+                document: true,
+                heading: true,
+                list: true,
+                listItem: true,
+                codeBlock: true,
+                htmlBlock: true,
+                mathBlock: true,
+                table: true,
+                blockquote: true,
+                superBlock: true,
+                paragraph: true,
+                embedBlock: false,
+              },
+              paths: [],
+              groupBy: 0,
+              orderBy: 0,
+              page: 1,
+            };
+            let result = await kernelApi.全文搜索块(params);
+            console.log(result);
+            result.blocks.forEach((block) => {
+              let blockItem = {
+                icon: getIconByType(block.type, block.subtype),
+                label: block.content.substring(0, 60),
+                click: async (e) => {
+                  let checkBlockFold = await kernelApi.checkBlockFold({
+                    id: block.id,
+                  });
+                  let data = await kernelApi.getBlockInfo({ id: block.id });
+                  clientApi.openTab({
+                    fileName: data.rootTitle,
+                    rootIcon: data.rootIcon,
+                    rootID: data.rootID,
+                    id: block.id,
+                    action: checkBlockFold
+                      ? ["cb-get-focus", "cb-get-all"]
+                      : ["cb-get-focus", "cb-get-context"],
+                    zoomIn: checkBlockFold,
+                    removeCurrentTab: true,
+                    position: "right",
+                  });
+                  this.隐藏遮罩();
+                },
+              };
 
-                }
+              siyuanMenu.addItem(blockItem);
+            });
+            siyuanMenu.open({
+              x: event.params.x,
+              y: event.params.y,
+            });
+            this.显示遮罩();
+          },
+          enabaled: event.params.selectionText,
+          visiable: event.params.selectionText,
+        })
+      );
+      menu.popup(remote.getCurrentWindow());
+    });
+  }
+  隐藏遮罩() {
+    this.面板容器.querySelector(".ovelayer")
+      ? this.面板容器.querySelector(".ovelayer").remove()
+      : null;
+  }
+  显示遮罩() {
+    if (!this.面板容器.querySelector(".ovelayer")) {
+      let div = document.createElement("div");
+      div.setAttribute(
+        "style",
+        `position:absolute;bottom:0;left:0;height:${this.页面容器.clientHeight}px;width:100%`
+      );
+      div.setAttribute("class", "ovelayer");
+      div.addEventListener("mousedown", () => {
+        siyuanMenu.close();
+      });
+      this.面板容器.appendChild(div);
+    }
+  }
+  绑定事件() {
+    document.addEventListener(
+      "mousedown",
+      () => {
+        this.显示遮罩();
+      },
+      true
+    );
+    document.addEventListener(
+      "mouseup",
+      () => {
+        this.隐藏遮罩();
+      },
+      true
+    );
+    this.地址栏容器.addEventListener("change", () => {
+      this.加载URL(this.地址栏容器.value);
+    });
+    this.前进按钮.addEventListener("click", () => {
+      this.移动历史(1);
+    });
+    this.后退按钮.addEventListener("click", () => {
+      this.移动历史(-1);
+    });
+    this.页面容器.addEventListener("will-navigate", (e) => {
+      e.preventDefault();
+      const protocol = new URL(e.url).protocol;
+      if (
+        protocol === "http:" ||
+        protocol === "https:" ||
+        protocol === "file:"
+      ) {
+        this.页面状态.历史记录数组.push(e.url);
+        this.移动历史(1)
+      }
+    });
+    this.页面容器.addEventListener("page-title-updated", async (e) => {
+      this.tilte = e.title;
+      this.标题容器()?this.标题容器().querySelector('.item__text').innerHTML = Lute.EscapeHTMLStr(e.title):null
+      console.log(this.地址栏容器.value)
+      let _URL = new URL(this.地址栏容器.value)
+      let icoURL = _URL.origin+'/favicon.ico'
+      this.标题容器()?this.标题容器().querySelector('.item__graphic')&&this.标题容器().querySelector('.item__graphic').remove():null
+      this.标题容器()?this.标题容器().querySelector('.item__icon')&&this.标题容器().querySelector('.item__icon').remove():null
 
-                /* 是否可后退 */
-                // REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#webviewcangoback
-                this.updateBackButtonStatus(this.webview.canGoBack());
+      this.标题容器()?this.标题容器().insertAdjacentHTML('afterbegin',
+      `
+      <span class="item__icon">
+      <img src='${icoURL}'></img>
+      </span>
+      ` ):null
 
-                /* 是否可前进 */
-                // REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#webviewcangoback
-                this.updateForwardButtonStatus(this.webview.canGoForward());
-            })
-
-            /**
-             * 更改页签标题
-             * REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#%E4%BA%8B%E4%BB%B6-page-title-updated
-            */
-            this.webview.addEventListener('page-title-updated', e => {
-                // console.debug(e)
-                // console.debug(this.context_tab)
-                this.context_tab.parent.updateTitle(e.title)
-            })
-
-            /**
-             * 加载时 & 加载完成设置不同的图标
-             * REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#event-did-start-loading
-             * REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#event-did-stop-loading
-             */
-            /* 开始加载 */
-            this.webview.addEventListener('did-start-loading', e => {
-                // console.debug(e)
-                this.updateRefreshButtonStatus(true)
-            })
-            /* 停止加载 */
-            this.webview.addEventListener('did-stop-loading', e => {
-                // console.debug(e)
-                this.updateRefreshButtonStatus(false)
-            })
-
-            /**
-             * 更改页签图标
-             * TODO: 插件 API 支持网络图标
-             * REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#%E4%BA%8B%E4%BB%B6-page-favicon-updated
-            */
-            // this.view.addEventListener('page-favicon-updated', e => {
-            //     console.debug(e)
-            //     console.debug(this.context_tab)
-            // })
-        }
-        else { // 浏览器环境
-            /* 页面加载完成 */
-            this.webview.addEventListener('load', e => {
-                /* 是否可后退 */
-                // REF https://developer.mozilla.org/zh-CN/docs/Web/API/HTMLIFrameElement#%E6%B5%8F%E8%A7%88%E5%99%A8_api_%E6%96%B9%E6%B3%95
-                this.updateBackButtonStatus(this.webview.getCanGoBack?.());
-
-                /* 是否可前进 */
-                // REF https://developer.mozilla.org/zh-CN/docs/Web/API/HTMLIFrameElement#%E6%B5%8F%E8%A7%88%E5%99%A8_api_%E6%96%B9%E6%B3%95
-                this.updateForwardButtonStatus(this.webview.getCanGoForward?.());
-            })
-        }
+     
+    });
+    this.重载按钮.addEventListener("click", () => {
+      this.重新加载();
+    });
+  }
+  重新加载() {
+    this.加载历史(this.页面状态.当前历史序号);
+  }
+  修正协议(url) {
+    console.log(url);
+    if (
+      url.startsWith("http://") ||
+      url.startsWith("https://") ||
+      url.startsWith("file://")
+    ) {
+      return url;
+    } else {
+      return "https://" + url;
     }
-    backButtonClickEventListener = () => {
-        if (this.isWebview) {
-            // REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#webviewcangoback
-            if (this.webview.canGoBack()) {
-                // REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#webviewgoback
-                this.webview.goBack()
-            }
-        }
-        else {
-            // REF https://developer.mozilla.org/zh-CN/docs/Web/API/HTMLIFrameElement#%E6%B5%8F%E8%A7%88%E5%99%A8_api_%E6%96%B9%E6%B3%95
-            if (this.webview.getCanGoBack?.()) {
-                this.webview.goBack?.()
-            }
-        }
+  }
+  加载URL(url) {
+    url = this.修正协议(url);
+    this.页面状态.历史记录数组.push(url);
+    this.移动历史(1);
+  }
+  移动历史(步数) {
+    let 页面状态 = this.页面状态;
+    console.log(this.页面状态);
+    if (页面状态.当前历史序号 + 步数 >= 页面状态.历史记录数组.length - 1) {
+      this.加载历史(页面状态.历史记录数组.length - 1);
+    } else if (页面状态.当前历史序号 + 步数 < 0) {
+      this.加载历史(0);
+    } else {
+      this.加载历史(页面状态.当前历史序号 + 步数);
     }
-    forwardButtonClickEventListener = () => {
-        if (this.isWebview) {
-            // REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#webviewcangoforward
-            if (this.webview.canGoForward()) {
-                // REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#webviewgoforward
-                this.webview.goForward()
-            }
-        }
-        else {
-            // REF https://developer.mozilla.org/zh-CN/docs/Web/API/HTMLIFrameElement#%E6%B5%8F%E8%A7%88%E5%99%A8_api_%E6%96%B9%E6%B3%95
-            if (this.webview.getCanGoForward?.()) {
-                this.webview.goForward?.()
-            }
-        }
+  }
+  async 加载历史(历史序号) {
+    let url = this.页面状态.历史记录数组[历史序号];
+    this.页面容器.setAttribute("src", url);
+    this.地址栏容器.value !== url ? (this.地址栏容器.value = url) : null;
+    this.页面状态.当前历史序号 = 历史序号;
+    全局浏览记录.push({
+      tab: this,
+      url: url,
+    });
+  }
+  async 查找反向链接() {
+    this.backlinkListElement.innerHTML = "等待加载";
+    let url = this.urlInputter.value;
+    this.反向链接编辑器 = new BacklinksEditor(this.backlinkListElement, url);
+  }
+  加载文件(文件路径) {
+    //如果没有指定file协议,就加上file协议
+    if (!文件路径.startsWith("file://")) {
+      文件路径 = "file://" + 文件路径;
     }
-    stopButtonClickEventListener = () => {
-        // REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#webviewstop
-        // REF https://developer.mozilla.org/zh-CN/docs/Web/API/HTMLIFrameElement#%E6%B5%8F%E8%A7%88%E5%99%A8_api_%E6%96%B9%E6%B3%95
-        this.webview.stop()
-    }
-    reloadButtonClickEventListener = () => {
-        this.reload()
-    }
-    updateBackButtonStatus(enable) {
-        if (enable) {
-            this.button_back.addEventListener('click', this.backButtonClickEventListener)
-            this.button_back.classList.remove("toolbar__item--disabled") // 启用后退按钮
-        }
-        else {
-            this.button_back.removeEventListener('click', this.backButtonClickEventListener)
-            this.button_back.classList.add("toolbar__item--disabled") // 禁用后退按钮
-        }
-    }
-    updateForwardButtonStatus(enable) {
-        if (enable) {
-            this.buttom_forward.addEventListener('click', this.forwardButtonClickEventListener)
-            this.buttom_forward.classList.remove("toolbar__item--disabled") // 启用前进按钮
-        }
-        else {
-            this.buttom_forward.removeEventListener('click', this.forwardButtonClickEventListener)
-            this.buttom_forward.classList.add("toolbar__item--disabled") // 禁用前进按钮
-        }
-    }
-    updateRefreshButtonStatus(loading) {
-        if (loading) { // 正在加载中
-            this.button_refrash.removeEventListener('click', this.reloadButtonClickEventListener) // 移除刷新监听器
-            this.button_refrash.addEventListener('click', this.stopButtonClickEventListener) // 添加停止监听器
-            this.button_refrash.innerHTML = `<svg><use xlink:href="#iconClose"></use></svg>` // 图标改为停止图标
-            this.button_refrash.ariaLabel = this.context_plugin.i18n.stopLoadingThisPage // 更新提示
-        }
-        else {
-            this.button_refrash.removeEventListener('click', this.stopButtonClickEventListener) // 移除停止监听器
-            this.button_refrash.addEventListener('click', this.reloadButtonClickEventListener) // 添加刷新监听器
-            this.button_refrash.innerHTML = `<svg><use xlink:href="#iconRefresh"></use></svg>` // 图标改为刷新图标
-            this.button_refrash.ariaLabel = this.context_plugin.i18n.reloadCurrentPage // 更新提示
-        }
-    }
-    loadURL(url) {
-        this.webview.src = url
-    }
-    reload() {
-        // REF https://www.electronjs.org/zh/docs/latest/api/webview-tag#webviewreload
-        // REF https://developer.mozilla.org/zh-CN/docs/Web/API/HTMLIFrameElement#%E6%B5%8F%E8%A7%88%E5%99%A8_api_%E6%96%B9%E6%B3%95
-        this.webview.reload?.();
-    }
+    this.加载URL(文件路径);
+  }
 }
+
 //反向链接等官方编辑器接口再移植
 /*class BacklinksEditor  {
     constructor(element,key){
@@ -327,66 +441,62 @@ class BrowserTabManager {
         }
     }
 }*/
+module.exports = class browserTab extends Plugin {
+  onload() {
+    console.log("浏览器页签加载");
+    document.addEventListener("click", this.onlick, true);
+    this.初始化依赖();
+    this.customTab = this.addTab(BrowserTabContainer);
+    siyuanMenu = new clientApi.Menu("browserTab", () => {});
+  }
+  async 初始化依赖() {
+    kernelApi = (await import("/plugins/browserTab/pollyfills/kernelApi.js"))[
+      "default"
+    ];
+  }
+  onlick = (e) => {
+    if (
+      e.target.dataset &&
+      e.target.dataset.type == "a" &&
+      e.target.dataset.href
+    ) {
+      try {
+        this.判定链接回调(e.target, e);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+  判定链接回调(链接元素, 点击事件) {
+    if (!链接元素.dataset.href) {
+      return;
+    } else {
+      let _url = new URL(链接元素.dataset.href);
+      console.log(_url);
+      if (this.协议处理函数(_url.protocol, 链接元素)) {
+        let data = this.协议处理函数(_url.protocol, 链接元素);
+        let tab = clientApi.openTab({
+          custom: {
+            icon: "iconLanguage",
+            title: data.data.title || "browserTab",
+            fn: this.customTab,
+            data: data.data,
+          },
+        });
+        console.log(tab);
 
-module.exports = class BrowserTabPlugin extends siyuan.Plugin {
-    static isUrlSchemeAvailable(url) {
-        switch (true) {
-            case url.startsWith("https://"):
-            case url.startsWith("http://"):
-            case url.startsWith("file://"):
-            case url.startsWith("ftp://"):
-            case url.startsWith("//"):
-                return true;
-            default:
-                return false;
-        }
-    }
-    static isElection() {
-        return !!globalThis.require;
+      }
     }
 
-    onload() {
-        // console.debug(this);
-        if (BrowserTabPlugin.isElection()) {
-            this.custom_tab = this.addTab(BrowserTabContainerFactory(this));
-            globalThis.addEventListener("click", this.linkClientEventListener, true);
-        }
+    点击事件.preventDefault();
+    点击事件.stopPropagation();
+  }
+  协议处理函数(协议, 链接元素) {
+    if (!协议) {
+      return { data: { titlte: 链接元素.dataset.title,url:链接元素.dataset.href} };
     }
-
-    onunload() {
-        if (BrowserTabPlugin.isElection()) {
-            globalThis.removeEventListener("click", this.linkClientEventListener, true);
-        }
+    if(协议=='https:'||协议==='http:'){
+        return {data:{titlte: 链接元素.dataset.title,url:链接元素.dataset.href}}
     }
-
-    linkClientEventListener = e => {
-        // console.debug(e);
-        if (
-            e.target.dataset &&
-            e.target.dataset.type === "a" &&
-            e.target.dataset.href
-        ) {
-            console.info(`[${this.name}]: ${e.target.dataset.href}`);
-            const plugin = this
-            if (BrowserTabPlugin.isUrlSchemeAvailable(e.target.dataset.href)) {
-                try {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    siyuan.openTab({
-                        custom: {
-                            icon: "iconLanguage",
-                            title: e.target.innerText || e.target.dataset.href,
-                            fn: plugin.custom_tab,
-                            data: {
-                                url: e.target.dataset.href,
-                                title: e.target.innerText,
-                            },
-                        },
-                    });
-                } catch (e) {
-                    console.warn(e)
-                }
-            }
-        }
-    }
+  }
 };
