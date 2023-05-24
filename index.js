@@ -69,7 +69,9 @@ let BrowserTabContainer = {
         this.frame.setAttribute("src", this.frame.getAttribute("src"));
       };
     }
-    let 标题容器 = ()=>{return this.parent.headElement||null}
+    let 标题容器 = () => {
+      return this.parent.headElement || null;
+    };
     console.log(this);
     this.页面控制器 = new 页面控制器(
       this.frame,
@@ -190,12 +192,22 @@ class 页面控制器 {
       const menu = new remote.Menu();
       menu.append(
         new remote.MenuItem({
-          label: "刷新",
+          label: "刷新当前页面",
           click: () => {
             this.页面容器.reload();
           },
           enabaled: event.params.canSelectAll,
           visiable: event.params.isEditable,
+        })
+      );
+      menu.append(
+        new remote.MenuItem({
+          label: "在当前页面打开",
+          click: () => {
+            this.加载URL(event.params.linkURL)
+          },
+          enabaled: event.params.linkURL,
+          visiable: event.params.linkURL,
         })
       );
       menu.append(
@@ -335,26 +347,54 @@ class 页面控制器 {
         protocol === "file:"
       ) {
         this.页面状态.历史记录数组.push(e.url);
-        this.移动历史(1)
+        this.移动历史(1);
       }
     });
     this.页面容器.addEventListener("page-title-updated", async (e) => {
       this.tilte = e.title;
-      this.标题容器()?this.标题容器().querySelector('.item__text').innerHTML = Lute.EscapeHTMLStr(e.title):null
-      console.log(this.地址栏容器.value)
-      let _URL = new URL(this.地址栏容器.value)
-      let icoURL = _URL.origin+'/favicon.ico'
-      this.标题容器()?this.标题容器().querySelector('.item__graphic')&&this.标题容器().querySelector('.item__graphic').remove():null
-      this.标题容器()?this.标题容器().querySelector('.item__icon')&&this.标题容器().querySelector('.item__icon').remove():null
+      this.标题容器()
+        ? (this.标题容器().querySelector(".item__text").innerHTML =
+            Lute.EscapeHTMLStr(e.title))
+        : null;
+      console.log(this.地址栏容器.value);
+      let _URL = new URL(this.地址栏容器.value);
+      let icoURL = _URL.origin + "/favicon.ico";
+      this.标题容器()
+        ? this.标题容器().querySelector(".item__graphic")&&this.标题容器().querySelector(".item__graphic").remove()
+        : null;
+        this.标题容器()
+        ? this.标题容器().querySelector(".item__icon")&&this.标题容器().querySelector(".item__icon").remove()
+        : null;
 
-      this.标题容器()?this.标题容器().insertAdjacentHTML('afterbegin',
-      `
-      <span class="item__icon">
-      <img src='${icoURL}'></img>
-      </span>
-      ` ):null
+      this.标题容器()
+        ? this.标题容器().insertAdjacentHTML(
+            "afterbegin",
+            `
+          <span class="item__icon">
+          <img src='${icoURL}'></img>
+          </span>
+          `
+          )
+        : null;
 
-     
+      try {
+        fetch(this.地址栏容器.value)
+          .then((res) => res.text())
+          .then((html) => {
+            // 使用DOMParser解析HTML代码
+            try{
+            const doc = new DOMParser().parseFromString(html, "text/html");
+            const favicon = doc.querySelector('link[rel="icon"]');
+            const href = favicon.getAttribute("href");
+            this.标题容器()
+              ? this.标题容器().querySelector(".item__icon")&&(this.标题容器().querySelector(".item__icon").innerHTML=`<img src='${Lute.EscapeHTMLStr
+                (href)}'></img>`)
+
+              : null;
+            }catch(e){}
+          });
+      } catch (e) {
+      }
     });
     this.重载按钮.addEventListener("click", () => {
       this.重新加载();
@@ -444,16 +484,64 @@ class 页面控制器 {
 module.exports = class browserTab extends Plugin {
   onload() {
     console.log("浏览器页签加载");
-    document.addEventListener("click", this.onlick, true);
     this.初始化依赖();
     this.customTab = this.addTab(BrowserTabContainer);
     siyuanMenu = new clientApi.Menu("browserTab", () => {});
+    
   }
+
   async 初始化依赖() {
     kernelApi = (await import("/plugins/browserTab/pollyfills/kernelApi.js"))[
       "default"
     ];
+    try{
+    this.设置 = await this.loadData('config.json')
+    this.设置 = this.设置?this.设置:{}
+    }catch(e){
+      this.设置 = {}
+    }
+    document.addEventListener("click", this.onlick, true);
+    console.log(this.设置)
+    this.初始化顶栏按钮()
   }
+  初始化顶栏按钮(){
+    this.顶栏按钮= this.addTopBar({
+      icon: "iconLanguage",
+      title: this.i18n.addTopBarIcon,
+      position: "right",
+      callback: () => {
+          this.打开设置菜单(this.顶栏按钮.getBoundingClientRect());
+      }
+    });
+  }
+  打开设置菜单(位置){
+    位置.isLeft=true
+
+
+    const 设置菜单 = new clientApi.Menu("topBarSample", () => {
+      
+    });
+    设置菜单.menu.element.querySelector('.b3-menu__items').insertAdjacentHTML
+    (
+
+      'beforeend',
+      `<button class="b3-menu__item" data-type="" >
+      默认使用插件打开链接
+      <span class="fn__space"></span>
+          <input style="box-sizing: border-box" class="b3-switch fn__flex-center ctrlKeySetter" type="checkbox">
+      </button>`
+    )
+
+    设置菜单.menu.element.querySelector('.ctrlKeySetter').checked=this.设置.默认使用插件打开链接?true:false
+    设置菜单.menu.element.querySelector('.ctrlKeySetter').addEventListener('change',async()=>{
+      this.设置.默认使用插件打开链接=设置菜单.menu.element.querySelector('.ctrlKeySetter').checked?true:false
+      await this.saveData('config.json',JSON.stringify(this.设置))
+      this.设置 = await this.loadData('config.json')
+      this.设置 = this.设置?this.设置:{}  
+    })
+    设置菜单.open(位置)
+  }
+ 
   onlick = (e) => {
     if (
       e.target.dataset &&
@@ -468,6 +556,9 @@ module.exports = class browserTab extends Plugin {
     }
   };
   判定链接回调(链接元素, 点击事件) {
+    if(window.siyuan.ctrlIsPressed===(this.设置.默认使用插件打开链接?true:false)){
+       return
+    }
     if (!链接元素.dataset.href) {
       return;
     } else {
@@ -483,20 +574,22 @@ module.exports = class browserTab extends Plugin {
             data: data.data,
           },
         });
-        console.log(tab);
-
+        点击事件.preventDefault();
+        点击事件.stopPropagation();
       }
     }
 
-    点击事件.preventDefault();
-    点击事件.stopPropagation();
   }
   协议处理函数(协议, 链接元素) {
     if (!协议) {
-      return { data: { titlte: 链接元素.dataset.title,url:链接元素.dataset.href} };
+      return {
+        data: { titlte: 链接元素.dataset.title, url: 链接元素.dataset.href },
+      };
     }
-    if(协议=='https:'||协议==='http:'){
-        return {data:{titlte: 链接元素.dataset.title,url:链接元素.dataset.href}}
+    if (协议 == "https:" || 协议 === "http:") {
+      return {
+        data: { titlte: 链接元素.dataset.title, url: 链接元素.dataset.href },
+      };
     }
   }
 };
