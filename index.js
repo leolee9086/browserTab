@@ -72,7 +72,6 @@ let BrowserTabContainer = {
     let 标题容器 = () => {
       return this.parent.headElement || null;
     };
-    console.log(this);
     this.页面控制器 = new 页面控制器(
       this.frame,
       this.urlInputter,
@@ -188,7 +187,6 @@ class 页面控制器 {
       this.页面容器.src !== res.url ? (this.页面容器.src = res.url) : null;
     });
     this.页面容器.addEventListener("context-menu", (event) => {
-      console.log(event, remote);
       const menu = new remote.Menu();
       menu.append(
         new remote.MenuItem({
@@ -254,7 +252,6 @@ class 页面控制器 {
               page: 1,
             };
             let result = await kernelApi.全文搜索块(params);
-            console.log(result);
             result.blocks.forEach((block) => {
               let blockItem = {
                 icon: getIconByType(block.type, block.subtype),
@@ -292,6 +289,31 @@ class 页面控制器 {
           visiable: event.params.selectionText,
         })
       );
+      !this.页面容器.isDevToolsOpened()&&menu.append(
+        new remote.MenuItem({
+          label:'打开开发者工具',
+          click:async()=>{
+            this.页面容器.openDevTools()
+            this.开发者工具已经打开= true
+          },
+          enabaled: !this.开发者工具已经打开,
+          visiable: !this.开发者工具已经打开,
+        })
+      )
+
+
+      this.页面容器.isDevToolsOpened()&& menu.append(
+        new remote.MenuItem({
+          label:'关闭开发者工具',
+          click:async()=>{
+            this.页面容器.closeDevTools()
+            this.开发者工具已经打开= false
+          },
+          enabaled: this.开发者工具已经打开,
+          visiable: this.开发者工具已经打开,
+
+        })
+      )
       menu.popup(remote.getCurrentWindow());
     });
   }
@@ -356,7 +378,6 @@ class 页面控制器 {
         ? (this.标题容器().querySelector(".item__text").innerHTML =
             Lute.EscapeHTMLStr(e.title))
         : null;
-      console.log(this.地址栏容器.value);
       let _URL = new URL(this.地址栏容器.value);
       let icoURL = _URL.origin + "/favicon.ico";
       this.标题容器()
@@ -404,7 +425,6 @@ class 页面控制器 {
     this.加载历史(this.页面状态.当前历史序号);
   }
   修正协议(url) {
-    console.log(url);
     if (
       url.startsWith("http://") ||
       url.startsWith("https://") ||
@@ -422,7 +442,6 @@ class 页面控制器 {
   }
   移动历史(步数) {
     let 页面状态 = this.页面状态;
-    console.log(this.页面状态);
     if (页面状态.当前历史序号 + 步数 >= 页面状态.历史记录数组.length - 1) {
       this.加载历史(页面状态.历史记录数组.length - 1);
     } else if (页面状态.当前历史序号 + 步数 < 0) {
@@ -432,6 +451,7 @@ class 页面控制器 {
     }
   }
   async 加载历史(历史序号) {
+    try{
     let url = this.页面状态.历史记录数组[历史序号];
     this.页面容器.setAttribute("src", url);
     this.地址栏容器.value !== url ? (this.地址栏容器.value = url) : null;
@@ -440,6 +460,9 @@ class 页面控制器 {
       tab: this,
       url: url,
     });
+    }catch(e){
+      console.error('browserTab:'+e)
+    }
   }
   async 查找反向链接() {
     this.backlinkListElement.innerHTML = "等待加载";
@@ -501,7 +524,6 @@ module.exports = class browserTab extends Plugin {
       this.设置 = {}
     }
     document.addEventListener("click", this.onlick, true);
-    console.log(this.设置)
     this.初始化顶栏按钮()
   }
   初始化顶栏按钮(){
@@ -516,14 +538,10 @@ module.exports = class browserTab extends Plugin {
   }
   打开设置菜单(位置){
     位置.isLeft=true
-
-
-    const 设置菜单 = new clientApi.Menu("topBarSample", () => {
-      
+    const 设置菜单 = new clientApi.Menu("topBarSample", () => { 
     });
     设置菜单.menu.element.querySelector('.b3-menu__items').insertAdjacentHTML
     (
-
       'beforeend',
       `<button class="b3-menu__item" data-type="" >
       默认使用插件打开链接
@@ -531,7 +549,6 @@ module.exports = class browserTab extends Plugin {
           <input style="box-sizing: border-box" class="b3-switch fn__flex-center ctrlKeySetter" type="checkbox">
       </button>`
     )
-
     设置菜单.menu.element.querySelector('.ctrlKeySetter').checked=this.设置.默认使用插件打开链接?true:false
     设置菜单.menu.element.querySelector('.ctrlKeySetter').addEventListener('change',async()=>{
       this.设置.默认使用插件打开链接=设置菜单.menu.element.querySelector('.ctrlKeySetter').checked?true:false
@@ -563,33 +580,41 @@ module.exports = class browserTab extends Plugin {
       return;
     } else {
       let _url = new URL(链接元素.dataset.href);
-      console.log(_url);
       if (this.协议处理函数(_url.protocol, 链接元素)) {
-        let data = this.协议处理函数(_url.protocol, 链接元素);
+        let custom = this.协议处理函数(_url.protocol, 链接元素);
         let tab = clientApi.openTab({
-          custom: {
-            icon: "iconLanguage",
-            title: data.data.title || "browserTab",
-            fn: this.customTab,
-            data: data.data,
-          },
+          custom
         });
         点击事件.preventDefault();
         点击事件.stopPropagation();
       }
     }
-
   }
   协议处理函数(协议, 链接元素) {
-    if (!协议) {
-      return {
-        data: { titlte: 链接元素.dataset.title, url: 链接元素.dataset.href },
-      };
+    let custom
+    let data
+    switch(协议){
+      case 'https:':
+         data = { titlte: 链接元素.dataset.title, url: 链接元素.dataset.href }
+         custom = {
+          icon: "iconLanguage",
+          title: data.title || "browserTab",
+          fn: this.customTab,
+          data: data,
+        }
+      break
+      case 'http:':
+        data = { titlte: 链接元素.dataset.title, url: 链接元素.dataset.href,safe:false }
+        custom = {
+          icon: "iconLanguage",
+          title: data.title || "browserTab",
+          fn: this.customTab,
+          data: data,
+        }
+      break
+      case undefined:
+      break
     }
-    if (协议 == "https:" || 协议 === "http:") {
-      return {
-        data: { titlte: 链接元素.dataset.title, url: 链接元素.dataset.href },
-      };
-    }
+    return custom
   }
 };
