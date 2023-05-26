@@ -12,8 +12,8 @@
     "zh_CN": "把思源当成一个简单的浏览器使用"
   },
   "readme": {
-    "default": "README_zh_CN.md",
-    "en_US": "README_zh_CN.md",
+    "default": "README.md",
+    "en_US": "README_en_US.md",
     "zh_CN": "README.md"
   },
   "i18n": [
